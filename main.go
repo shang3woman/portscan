@@ -4,11 +4,37 @@ import (
 	"flag"
 	"fmt"
 	"net"
+	"net/netip"
 	"strconv"
 	"strings"
 	"sync"
 	"time"
 )
+
+func Hosts(cidr string) []string {
+	if len(cidr) == 0 {
+		return []string{}
+	}
+	_, ipnet, err := net.ParseCIDR(cidr)
+	if err != nil {
+		return []string{cidr}
+	}
+	prefix, _ := netip.ParsePrefix(ipnet.String())
+	var ips []string
+	for addr := prefix.Addr(); prefix.Contains(addr); addr = addr.Next() {
+		ips = append(ips, addr.String())
+	}
+	return ips
+}
+
+func extractHosts(str string) []string {
+	tmparr := strings.Split(str, ",")
+	var results []string
+	for _, v := range tmparr {
+		results = append(results, Hosts(v)...)
+	}
+	return results
+}
 
 func main() {
 	var hosts string
@@ -18,7 +44,8 @@ func main() {
 	flag.StringVar(&ports, "p", "", "ports")
 	flag.IntVar(&count, "c", 1000, "")
 	flag.Parse()
-	if len(hosts) == 0 {
+	hostsarr := extractHosts(hosts)
+	if len(hostsarr) == 0 {
 		flag.Usage()
 		return
 	}
@@ -31,7 +58,6 @@ func main() {
 		wg.Add(1)
 		go thread(&wg, ch)
 	}
-	hostarr := strings.Split(hosts, ",")
 	var portarr []string
 	if len(ports) == 0 {
 		for i := 1; i < 65536; i++ {
@@ -40,9 +66,9 @@ func main() {
 	} else {
 		portarr = strings.Split(ports, ",")
 	}
-	for i := 0; i < len(hostarr); i++ {
+	for i := 0; i < len(hostsarr); i++ {
 		for j := 0; j < len(portarr); j++ {
-			ch <- fmt.Sprintf("%s:%s", hostarr[i], portarr[j])
+			ch <- fmt.Sprintf("%s:%s", hostsarr[i], portarr[j])
 		}
 	}
 	close(ch)
