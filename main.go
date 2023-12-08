@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"flag"
 	"fmt"
 	"net"
@@ -75,20 +76,51 @@ func main() {
 	wg.Wait()
 }
 
+func isChar(b byte) bool {
+	if b >= 32 && b <= 126 {
+		return true
+	}
+	return false
+}
+
+func hexBanner(banner []byte) string {
+	var results bytes.Buffer
+	for _, v := range banner {
+		if isChar(v) {
+			results.WriteByte(v)
+		} else {
+			results.WriteString(fmt.Sprintf("\\x%02x", v))
+		}
+	}
+	return results.String()
+}
+
 func thread(wg *sync.WaitGroup, ch chan string) {
 	defer wg.Done()
 	for address := range ch {
-		if connect(address) {
+		ok, banner := connect(address)
+		if !ok {
+			continue
+		}
+		if len(banner) != 0 {
+			fmt.Printf("%s %s\n", address, hexBanner(banner))
+		} else {
 			fmt.Println(address)
 		}
 	}
 }
 
-func connect(address string) bool {
+func connect(address string) (bool, []byte) {
 	conn, err := net.DialTimeout("tcp", address, 4*time.Second)
 	if err != nil {
-		return false
+		return false, nil
 	}
+	req := fmt.Sprintf("GET / HTTP/1.1\r\nHost: %s\r\nAccept: */*\r\n\r\n", address)
+	conn.Write([]byte(req))
+	time.Sleep(2 * time.Second)
+	conn.SetReadDeadline(time.Now().Add(4 * time.Second))
+	var buffer [128]byte
+	n, _ := conn.Read(buffer[:])
 	conn.Close()
-	return true
+	return true, buffer[:n]
 }
