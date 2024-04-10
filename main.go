@@ -95,6 +95,16 @@ func hexBanner(banner []byte) string {
 	return results.String()
 }
 
+func removeZero(banner []byte) []byte {
+	var tmp []byte
+	for i := 0; i < len(banner); i++ {
+		if banner[i] != 0 {
+			tmp = append(tmp, banner[i])
+		}
+	}
+	return tmp
+}
+
 func thread(wg *sync.WaitGroup, ch chan string) {
 	defer wg.Done()
 	for address := range ch {
@@ -107,7 +117,7 @@ func thread(wg *sync.WaitGroup, ch chan string) {
 			output = fmt.Sprintf("%s http %s", address, hexBanner(httpBanner))
 		}
 		if len(rpcBanner) != 0 {
-			tmp := fmt.Sprintf("%s rpc %s", address, hexBanner(rpcBanner))
+			tmp := fmt.Sprintf("%s rpc %s", address, hexBanner(removeZero(rpcBanner)))
 			if len(output) == 0 {
 				output = tmp
 			} else {
