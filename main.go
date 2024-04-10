@@ -98,29 +98,65 @@ func hexBanner(banner []byte) string {
 func thread(wg *sync.WaitGroup, ch chan string) {
 	defer wg.Done()
 	for address := range ch {
-		ok, banner := connect(address)
+		ok, httpBanner, rpcBanner := connect(address)
 		if !ok {
 			continue
 		}
-		if len(banner) != 0 {
-			fmt.Printf("%s %s\n", address, hexBanner(banner))
-		} else {
+		var output string
+		if len(httpBanner) != 0 {
+			output = fmt.Sprintf("%s http %s", address, hexBanner(httpBanner))
+		}
+		if len(rpcBanner) != 0 {
+			tmp := fmt.Sprintf("%s rpc %s", address, hexBanner(rpcBanner))
+			if len(output) == 0 {
+				output = tmp
+			} else {
+				output += "\n" + tmp
+			}
+		}
+		if len(output) == 0 {
 			fmt.Println(address)
+		} else {
+			fmt.Println(output)
 		}
 	}
 }
 
-func connect(address string) (bool, []byte) {
+var msrpc = []byte{0x5, 0x0, 0xb, 0x3, 0x10, 0x0, 0x0, 0x0, 0x78, 0x0, 0x28, 0x0, 0x3, 0x0, 0x0, 0x0, 0xb8, 0x10, 0xb8, 0x10, 0x0, 0x0, 0x0, 0x0, 0x1, 0x0, 0x0, 0x0, 0x1, 0x0, 0x1, 0x0, 0xa0, 0x1, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0xc0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x46, 0x0, 0x0, 0x0, 0x0, 0x4, 0x5d, 0x88, 0x8a, 0xeb, 0x1c, 0xc9, 0x11, 0x9f, 0xe8, 0x8, 0x0, 0x2b, 0x10, 0x48, 0x60, 0x2, 0x0, 0x0, 0x0, 0xa, 0x2, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x4e, 0x54, 0x4c, 0x4d, 0x53, 0x53, 0x50, 0x0, 0x1, 0x0, 0x0, 0x0, 0x7, 0x82, 0x8, 0xa2, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x6, 0x1, 0xb1, 0x1d, 0x0, 0x0, 0x0, 0xf}
+
+func connect(address string) (bool, []byte, []byte) {
 	conn, err := net.DialTimeout("tcp", address, 4*time.Second)
 	if err != nil {
-		return false, nil
+		return false, nil, nil
 	}
-	req := fmt.Sprintf("GET / HTTP/1.1\r\nHost: %s\r\nAccept: */*\r\n\r\n", address)
-	conn.Write([]byte(req))
-	time.Sleep(2 * time.Second)
-	conn.SetReadDeadline(time.Now().Add(4 * time.Second))
-	var buffer [128]byte
-	n, _ := conn.Read(buffer[:])
+	httpReq := fmt.Sprintf("GET / HTTP/1.1\r\nHost: %s\r\nAccept: */*\r\n\r\n", address)
+	httpRsp := readBanner(conn, []byte(httpReq), 4*time.Second)
+	if len(httpRsp) != 0 {
+		if index := bytes.Index(httpRsp, []byte("\r\n\r\n")); index != -1 {
+			httpRsp = httpRsp[0:index]
+		}
+	}
 	conn.Close()
-	return true, buffer[:n]
+	conn, err = net.DialTimeout("tcp", address, 4*time.Second)
+	if err != nil {
+		return true, httpRsp, nil
+	}
+	rpcRsp := readBanner(conn, []byte(msrpc), 4*time.Second)
+	conn.Close()
+	return true, httpRsp, rpcRsp
+}
+
+func readBanner(conn net.Conn, req []byte, timeout time.Duration) []byte {
+	conn.Write([]byte(req))
+	conn.SetReadDeadline(time.Now().Add(timeout))
+	var ret []byte
+	for {
+		var tmp [1024]byte
+		n, err := conn.Read(tmp[:])
+		if err != nil {
+			break
+		}
+		ret = append(ret, tmp[0:n]...)
+	}
+	return ret
 }
