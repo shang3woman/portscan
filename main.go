@@ -5,25 +5,32 @@ import (
 	"flag"
 	"fmt"
 	"net"
-	"net/netip"
 	"strconv"
 	"strings"
 	"sync"
 	"time"
 )
 
+func inc(ip net.IP){
+	for j:=len(ip)-1;j>=0;j--{
+		ip[j]++
+		if ip[j] > 0{
+			break
+		}
+	}
+}
+
 func Hosts(cidr string) []string {
 	if len(cidr) == 0 {
 		return []string{}
 	}
-	_, ipnet, err := net.ParseCIDR(cidr)
+	ip, ipnet, err := net.ParseCIDR(cidr)
 	if err != nil {
 		return []string{cidr}
 	}
-	prefix, _ := netip.ParsePrefix(ipnet.String())
 	var ips []string
-	for addr := prefix.Addr(); prefix.Contains(addr); addr = addr.Next() {
-		ips = append(ips, addr.String())
+	for ip = ip.Mask(ipnet.Mask); ipnet.Contains(ip); inc(ip) {
+		ips = append(ips, ip.String())
 	}
 	return ips
 }
